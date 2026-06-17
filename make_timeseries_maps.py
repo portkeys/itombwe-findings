@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from PIL import Image, ImageDraw, ImageFont
+import itombwe_aoi as aoi          # REAL reserve polygon (replaces the bounding box)
 
 # ---- load .env so arraylake picks up the token ----
 for line in open(os.path.join(os.path.dirname(__file__), ".env")):
@@ -25,7 +26,6 @@ for line in open(os.path.join(os.path.dirname(__file__), ".env")):
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 # ---- CTrees reader (same constants as build_notebook.py) ----
-ITOMBWE_BBOX   = [28.16, -4.01, 28.98, -2.85]
 CTREES_REPO    = "portkeys/ctrees_data"
 CTREES_PATH    = "aboveground_biomass"
 CTREES_SCALE   = 10.0
@@ -51,10 +51,9 @@ def connect():
     _ct["x"]     = root["x"][:]
     _ct["y"]     = root["y"][:]
     _ct["years"] = [int(str(t)[:4]) for t in root["time"][:]]
-    w, s, e, n = ITOMBWE_BBOX
-    ix = np.where((_ct["x"] >= w) & (_ct["x"] <= e))[0]
-    iy = np.where((_ct["y"] >= s) & (_ct["y"] <= n))[0]
-    _ct["win"] = (int(iy.min()), int(iy.max())+1, int(ix.min()), int(ix.max())+1)
+    _ct["win"] = aoi.window(_ct["x"], _ct["y"])
+    # boolean mask of pixels inside the real reserve polygon, aligned to the window
+    _ct["mask"] = aoi.rasterize(aoi.reserve_geom(), _ct["x"], _ct["y"], _ct["win"])
 
 def density(year):
     ti = _ct["years"].index(year)
@@ -72,7 +71,12 @@ stack = np.empty((len(YEARS),) + density(YEARS[0]).shape, dtype="float32")
 stack[0] = density(YEARS[0])
 for i, yr in enumerate(YEARS[1:], start=1):
     stack[i] = density(yr)
-print(f"loaded stack {stack.shape} in {time.time()-t0:.0f}s")
+# clip to the real reserve polygon: everything outside the boundary -> NaN, so the
+# maps render the reserve's true shape (not a rectangle) and stats are reserve-only.
+outside = ~_ct["mask"]
+stack[:, outside] = np.nan
+print(f"loaded stack {stack.shape} in {time.time()-t0:.0f}s | "
+      f"{_ct['mask'].sum()} pixels inside reserve")
 
 VMAX = float(np.nanpercentile(stack, 98))   # shared scale across all years
 print(f"shared vmax (p98) = {VMAX:.0f} Mg/ha")
@@ -126,7 +130,9 @@ ax.set_title("Apparent biomass change, 2000 → 2025\n(red = loss, green = gain)
              fontsize=11, color="#16241d")
 ax.set_xticks([]); ax.set_yticks([])
 cb = fig.colorbar(im, ax=ax, shrink=0.72); cb.set_label("Δ Mg/ha over 25 years")
-loss_frac = 100 * np.nanmean(total_change < -2)   # share of area losing >2 Mg/ha
+# share of reserve pixels losing >2 Mg/ha (over valid in-reserve pixels only)
+valid = np.isfinite(total_change)
+loss_frac = 100 * np.sum((total_change < -2) & valid) / np.sum(valid)
 ax.text(0.5, -0.02, f"{loss_frac:.0f}% of pixels show a net loss > 2 Mg/ha",
         transform=ax.transAxes, ha="center", va="top", fontsize=9.5, color="#6c7a72")
 fig.tight_layout()
@@ -158,6 +164,7 @@ frames = []
 for i, yr in enumerate(YEARS):
     rgba = cmap(norm(stack[i]))                       # (H,W,4) float
     rgb = (rgba[..., :3] * 255).astype("uint8")
+    rgb[outside] = (20, 64, 44)                        # outside reserve -> canvas green
     map_img = Image.fromarray(rgb).resize((target_w, target_h), Image.BILINEAR)
     # place the map under a solid header band so the year never overlaps the map
     canvas = Image.new("RGB", (target_w, target_h + BAND_H), (20, 64, 44))
@@ -177,6 +184,96 @@ frames[0].save("fig_agb_animation.gif", save_all=True, append_images=frames[1:],
 sz = os.path.getsize("fig_agb_animation.gif") / 1e6
 print(f"saved fig_agb_animation.gif | {len(frames)} frames | {target_w}x{target_h} | {sz:.2f} MB")
 
+# ============================================================ 4) HEADLINE DENSITY MAP
+# Single large map of the latest year, reserve shape, for the report hero figure.
+C_FRACTION, CO2_PER_C = 0.47, 44.0 / 12.0
+y0, y1, x0, x1 = _ct["win"]
+row_lats = _ct["y"][y0:y1]
+px_ha_row = np.array([aoi.pixel_area_ha(lat) for lat in row_lats])
+area_grid = np.repeat(px_ha_row[:, None], x1 - x0, axis=1) * _ct["mask"]   # 0 outside reserve
+area_ha = float(area_grid.sum())
+
+latest = yr_slice(YEARS[-1])
+mean_latest = float(np.nanmean(latest))
+stock_co2e = float(np.nansum(latest * area_grid)) * C_FRACTION * CO2_PER_C
+
+fig, ax = plt.subplots(figsize=(6.5, 7.5))
+im = ax.imshow(latest, cmap="YlGn", vmin=0, vmax=VMAX)
+ax.set_title(f"Itombwe Nature Reserve — aboveground biomass {YEARS[-1]}\n"
+             f"CTrees ~100 m · {area_ha:,.0f} ha · mean {mean_latest:.0f} Mg/ha",
+             fontsize=10, color="#16241d")
+ax.set_xticks([]); ax.set_yticks([])
+cb = fig.colorbar(im, ax=ax, shrink=0.7); cb.set_label("Mg dry biomass / ha")
+fig.tight_layout()
+save_png_quantized(fig, "fig_agb_map.png", colors=256)
+plt.close(fig)
+print(f"saved fig_agb_map.png | {area_ha:,.0f} ha | {stock_co2e/1e6:.1f} Mt CO2e")
+
+# ============================================================ 5) STOCK / DENSITY TREND
+# Reserve-wide total above-ground CO2e stock and mean density across 2000-2025.
+mean_series = np.array([np.nanmean(stack[i]) for i in range(len(YEARS))])
+stock_series = np.array([np.nansum(stack[i] * area_grid) for i in range(len(YEARS))]) \
+    * C_FRACTION * CO2_PER_C / 1e6                       # Mt CO2e
+chg = 100 * (stock_series[-1] - stock_series[0]) / stock_series[0]
+
+fig, ax1 = plt.subplots(figsize=(7.4, 4.2))
+ax1.plot(YEARS, stock_series, "o-", color="#1b5e3f", lw=2, ms=4, label="stock")
+ax1.set_ylabel("Above-ground stock (Mt CO₂e)", color="#1b5e3f")
+ax1.tick_params(axis="y", labelcolor="#1b5e3f")
+ax1.set_xlabel("Year"); ax1.grid(alpha=.25)
+ax2 = ax1.twinx()
+ax2.plot(YEARS, mean_series, "s--", color="#d9a441", lw=1.2, ms=3, alpha=.8)
+ax2.set_ylabel("Mean density (Mg/ha)", color="#b9842f")
+ax2.tick_params(axis="y", labelcolor="#b9842f")
+ax1.set_title(f"Itombwe reserve — above-ground carbon stock, 2000–{YEARS[-1]}  "
+              f"({chg:+.1f}% over period)", fontsize=10.5, color="#16241d")
+fig.tight_layout()
+save_png_quantized(fig, "fig_agb_timeseries.png", colors=256)
+plt.close(fig)
+print(f"saved fig_agb_timeseries.png | stock {stock_series[0]:.1f} -> {stock_series[-1]:.1f} Mt CO2e ({chg:+.1f}%)")
+
+# ============================================================ 6) PER-SECTOR BREAKDOWN
+import json, geopandas as gpd
+with open("itombwe_numbers.json") as fh:
+    NUM = json.load(fh)
+sec_gdf = gpd.read_file(aoi.SECTEURS_SHP).to_crs(4326).dissolve(by="Nom")
+rows = []
+for name, rec in NUM["sectors"].items():
+    rows.append({"Nom": name,
+                 "mean": rec["per_year"][-1]["mean_density"],
+                 "stock": rec["per_year"][-1]["stock_CO2e"] / 1e6,
+                 "chg": rec["change_pct"]})
+sdf = sec_gdf.join(__import__("pandas").DataFrame(rows).set_index("Nom"))
+
+fig, (axm, axb) = plt.subplots(1, 2, figsize=(13, 6.2),
+                               gridspec_kw={"width_ratios": [1.15, 1]})
+sdf.plot(column="mean", cmap="YlGn", legend=True, ax=axm, edgecolor="white", lw=0.6,
+         legend_kwds={"label": "mean Mg/ha", "shrink": 0.7})
+for _, r in sdf.iterrows():
+    c = r.geometry.representative_point()
+    axm.annotate(r.name, (c.x, c.y), ha="center", va="center", fontsize=7,
+                 color="#16241d", fontweight="bold")
+axm.set_title(f"Biomass density by customary sector ({YEARS[-1]})", fontsize=10.5, color="#16241d")
+axm.set_xticks([]); axm.set_yticks([])
+for s in axm.spines.values():
+    s.set_visible(False)
+
+order = sdf.sort_values("stock")
+ypos = np.arange(len(order))
+axb.barh(ypos, order["stock"], color="#2e8b62")
+axb.set_yticks(ypos); axb.set_yticklabels(order.index, fontsize=9)
+for i, (st, ch) in enumerate(zip(order["stock"], order["chg"])):
+    axb.text(st, i, f"  {st:.1f} Mt ({ch:+.1f}%)", va="center", fontsize=8, color="#16241d")
+axb.set_xlabel("Above-ground stock (Mt CO₂e)")
+axb.set_title("Stock & 2000→2025 change by sector", fontsize=10.5, color="#16241d")
+axb.grid(axis="x", alpha=.25)
+axb.set_xlim(0, order["stock"].max() * 1.35)
+fig.tight_layout()
+save_png_quantized(fig, "fig_sectors.png", colors=256)
+plt.close(fig)
+print("saved fig_sectors.png")
+
 print("\nDONE. Sizes:")
-for f in ("fig_agb_panels.png", "fig_agb_change.png", "fig_agb_animation.gif"):
+for f in ("fig_agb_map.png", "fig_agb_timeseries.png", "fig_agb_panels.png",
+          "fig_agb_change.png", "fig_sectors.png", "fig_agb_animation.gif"):
     print(f"  {f:24} {os.path.getsize(f)/1e6:.2f} MB")

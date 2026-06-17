@@ -17,24 +17,67 @@ REV    = img("fig_revenue.png")
 PANELS = img("fig_agb_panels.png")        # 2000 | 2015 | 2025 density maps
 CHANGE = img("fig_agb_change.png")        # per-pixel change 2000->2025
 ANIM   = img("fig_agb_animation.gif")     # looping 2000->2025 animation
+SECTORS = img("fig_sectors.png")          # per-sector breakdown (map + bars)
+GFW    = img("fig_gfw_compare.png")       # Hansen/GFW deforestation vs CTrees biomass
 
-# --- credits, built transparently from the numbers shown in the report ------
-# Baseline = the SAME decline we measured in the CTrees series (0.1%/yr), not an
-# inflated counterfactual. Stock is the standing above-ground CO₂e ("CO₂ held").
-STOCK_CO2E = 210_000_000   # t CO₂e held (above-ground), from the biomass→CO₂ chain
-BASELINE   = 0.001         # 0.1%/yr — the measured annual decline, used as the baseline
-PREVENTED  = 0.75          # share of that loss the project actually prevents
-LEAKAGE    = 0.20          # −20% emissions displaced elsewhere
-BUFFER     = 0.15          # −15% non-permanence buffer withheld by the registry
+# --- recalculated numbers, clipped to the REAL reserve polygon (RN_Itombwe) -----
+# All figures below come from recompute_numbers.py -> itombwe_numbers.json, computed
+# over the official 573k-ha reserve boundary (not the old ~1.18M-ha bounding box).
+import json
+NUM = json.load(open("itombwe_numbers.json"))
+_wr = NUM["whole_reserve"]["per_year"]
+_first, _last = _wr[0], _wr[-1]
 
-GROSS = STOCK_CO2E * BASELINE                               # t/yr at risk in the baseline
-NET   = round(GROSS * PREVENTED * (1 - LEAKAGE) * (1 - BUFFER))   # ≈ 107,100 credits/yr
+AREA_HA      = NUM["area_ha"]                       # ~577,111 ha inside the mask
+STOCK_BIOMASS = _last["stock_Mg"]                   # t dry biomass, latest year
+STOCK_CO2E   = _last["stock_CO2e"]                  # t CO₂e (above-ground), latest year
+CARBON_T     = STOCK_BIOMASS * NUM["constants"]["C_FRACTION"]   # t C (above-ground)
+ROOT_SHOOT   = 0.24                                 # belowground add-on
+STOCK_AGBG   = STOCK_CO2E * (1 + ROOT_SHOOT)        # AGB + BGB CO₂e
+DENS_2025    = _last["mean_density"]
+DENS_2000    = _first["mean_density"]
+DENS_2015    = next(r["mean_density"] for r in _wr if r["year"] == 2015)
+TOTAL_PCT    = NUM["whole_reserve"]["change_pct_total"]    # ~-1.38 %
+ANN_PCT      = NUM["whole_reserve"]["change_pct_annual"]   # ~-0.055 %/yr
+
+# --- VM0048 / VMD0055 credit estimate: Activity Data × Emission Factor -----------
+# Replaces the old (wrong) stock-decline shortcut. AD = Hansen/GFW forest loss (ha/yr);
+# EF = CTrees biomass at the cleared pixels -> tCO2e/ha. INTERIM project-level proxy:
+# Verra has not published a South Kivu jurisdictional allocation, so AD is our own
+# measured rate and the credit-stack deductions are illustrative placeholders.
+AD = json.load(open("hansen_ad.json"))
+VM = json.load(open("vm0048_credits.json"))
+
+AD_HA_YR   = VM["ad"]["recent10_ha_yr"]               # ~1,616 ha/yr (2015-2024)
+TOTAL_LOSS = AD["total_loss_2001_2024_ha"]            # ha cleared 2001-2024
+LOSS_PCT   = 100 * TOTAL_LOSS / AD["forest2000_area_ha"]
+FOREST2000 = AD["forest2000_area_ha"]
+DENS_LOSS  = VM["ef"]["dens_loss_weighted_Mg_ha"]     # ~79 Mg/ha at cleared pixels
+EF         = VM["ef"]["EF_AGB_BGB_tCO2e_ha"]          # ~168 tCO2e/ha (incl. roots)
+BASE_EM    = VM["baseline_tCO2e_yr"]["recent10"]      # ~272,000 tCO2e/yr
+EFFECT     = VM["credit_stack"]["effectiveness"]      # 0.50
+LEAKAGE    = VM["credit_stack"]["leakage"]            # 0.20
+UNCERT     = VM["credit_stack"]["uncertainty"]        # 0.15
+BUFFER     = VM["credit_stack"]["buffer"]             # 0.15
+NET        = round(VM["credit_stack"]["net_credits_yr"])
 
 def usd(x):
     return f"${x/1e6:.2f}M" if x < 1e9 else f"${x/1e9:.2f}B"
 rev_rows = "".join(
     f"<tr><td>${p} per tonne</td><td>{usd(NET*p)}</td><td>{usd(NET*p*10)}</td></tr>"
     for p in (4, 8, 12, 20))
+
+# --- per-sector table rows (largest stock first) -----
+_sec_sorted = sorted(NUM["sectors"].items(),
+                     key=lambda kv: -kv[1]["per_year"][-1]["stock_CO2e"])
+def _sec_row(name, rec):
+    last = rec["per_year"][-1]
+    cls = "new" if rec["change_pct"] >= 0 else "old"
+    return (f"<tr><td>{name}</td><td>{rec['area_ha']:,.0f}</td>"
+            f"<td>{last['mean_density']:.0f}</td>"
+            f"<td>{last['stock_CO2e']/1e6:.1f}</td>"
+            f"<td class='{cls}'>{rec['change_pct']:+.1f}%</td></tr>")
+sector_rows = "".join(_sec_row(n, r) for n, r in _sec_sorted)
 
 HTML = f"""<!doctype html>
 <html lang="en">
@@ -134,15 +177,16 @@ HTML = f"""<!doctype html>
   <div class="two">
     <figure>
       <img src="{MAP}" alt="Aboveground biomass density map of Itombwe">
-      <figcaption>Biomass density across the area (greener = more biomass), from the CTrees data, 2025.
-      <span class="coords">Bounding box used (WGS84 / EPSG:4326):<br>
-      longitude&nbsp;28.16°E&nbsp;→&nbsp;28.98°E&nbsp;·&nbsp;latitude&nbsp;2.85°S&nbsp;→&nbsp;4.01°S<br>
-      corners: NW (2.85°S, 28.16°E), SE (4.01°S, 28.98°E). A rectangle around the reserve, not the exact gazetted boundary.</span></figcaption>
+      <figcaption>Biomass density across the reserve (greener = more biomass), from the CTrees data, 2025.
+      <span class="coords">Official reserve boundary (RN_Itombwe, WGS84 / EPSG:4326):<br>
+      a {AREA_HA:,.0f}-ha polygon spanning longitude&nbsp;27.95°E&nbsp;→&nbsp;29.00°E&nbsp;·&nbsp;latitude&nbsp;2.94°S&nbsp;→&nbsp;3.87°S.<br>
+      Now clipped to the exact gazetted boundary — not a bounding box.</span></figcaption>
     </figure>
     <div>
       <p><b>What stands out:</b> There's a dense, high-biomass core (the
-      darker greens) that looks like intact rainforest, wrapped in lighter areas — likely degraded,
-      farmed, or cleared land — concentrated toward the west.</p>
+      darker greens) that looks like intact rainforest — densest in the southwest (the Wamuzimu and
+      Basile sectors) — wrapped in lighter areas, likely degraded, farmed, or cleared land, that thin
+      out toward the eastern and northeastern edges (the Bafuliiru lowland reads lowest).</p>
       <p>That pattern points to where the forest seems healthy versus where the pressure is,
       straight from satellite + AI with no ground survey. Whether the pale zones are genuine
       degradation or just naturally lower vegetation is something we'd want to confirm on the ground.</p>
@@ -161,16 +205,16 @@ HTML = f"""<!doctype html>
     </figure>
     <div>
       <p><b>Year to year, the maps look almost identical.</b> Average density drifts from about
-      <b>106 to 104 Mg/ha</b> — the ~0.1%/yr we see in the trend. Real, but small enough to miss on
-      a map.</p>
+      <b>{DENS_2000:.0f} to {DENS_2025:.0f} Mg/ha</b> — the {ANN_PCT:+.2f}%/yr we see in the trend
+      ({TOTAL_PCT:+.1f}% over the full period). Real, but small enough to miss on a map.</p>
       <p>So a snapshot hides the story. To see <i>where</i> the forest is actually under pressure, it
       helps to map the change itself rather than the biomass — that's the panel below.</p>
     </div>
   </div>
   <figure>
     <img src="{PANELS}" alt="Biomass density in 2000, 2015 and 2025 side by side">
-    <figcaption>The same area in 2000, 2015 and 2025 on one color scale — means 106 → 104 → 104 Mg/ha.
-    The eye can barely tell them apart.</figcaption>
+    <figcaption>The same reserve in 2000, 2015 and 2025 on one color scale — means
+    {DENS_2000:.0f} → {DENS_2015:.0f} → {DENS_2025:.0f} Mg/ha. The eye can barely tell them apart.</figcaption>
   </figure>
   <div class="two" style="margin-top:6px">
     <figure>
@@ -179,9 +223,10 @@ HTML = f"""<!doctype html>
       all 26 years.</figcaption>
     </figure>
     <div>
-      <div class="callout"><b>Key Findings</b> About <b>a third of the area</b>
-      shows a net biomass loss, concentrated along the western edge and the farmed/settled frontier —
-      exactly where rangers, satellite alerts, and cookstove/livelihood programs would go first.</div>
+      <div class="callout"><b>Key Findings</b> About <b>27% of the reserve</b>
+      shows a net biomass loss, concentrated along the eastern and northeastern edges and the
+      farmed/settled frontier — exactly where rangers, satellite alerts, and cookstove/livelihood
+      programs would go first.</div>
       <p style="font-size:14px;color:var(--muted);margin-top:12px">Note: at
       ~100 m, the change in any single pixel carries model noise, so read the <i>clusters</i> as the
       signal rather than individual pixels. The hotspots are worth confirming against GFW
@@ -204,21 +249,39 @@ HTML = f"""<!doctype html>
 
 <section>
   <h2>Preliminary Results from CTree Data</h2>
-  <p class="lead">computed over the reserve bounding box. </p>
+  <p class="lead">computed over the official reserve boundary (RN_Itombwe). </p>
   <div class="cards">
-    <div class="card"><div class="n">~1.18M ha</div><div class="l">Area I looked at</div>
-      <div class="s">A box around the reserve — a bit larger than the official boundary</div></div>
-    <div class="card"><div class="n">~111 Mg/ha</div><div class="l">Typical biomass density</div>
-      <div class="s">Half the forest is denser than this, half less</div></div>
-    <div class="card"><div class="n">~210 M</div><div class="l">tonnes CO₂e held</div>
-      <div class="s">Roughly how much CO₂ the standing forest is storing</div></div>
-    <div class="card"><div class="n">≈ −0.1%/yr</div><div class="l">Biomass trend, 2003–25</div>
-      <div class="s">A slight downward drift over the period</div></div>
+    <div class="card"><div class="n">~{AREA_HA/1e3:.0f}k ha</div><div class="l">Reserve area</div>
+      <div class="s">The official gazetted boundary — down from the ~1.18M-ha bounding box used earlier</div></div>
+    <div class="card"><div class="n">~{DENS_2025:.0f} Mg/ha</div><div class="l">Mean biomass density</div>
+      <div class="s">Averaged across the reserve in 2025</div></div>
+    <div class="card"><div class="n">~{STOCK_CO2E/1e6:.0f} M</div><div class="l">tonnes CO₂e held</div>
+      <div class="s">Above-ground; roughly how much CO₂ the standing forest is storing</div></div>
+    <div class="card"><div class="n">{ANN_PCT:+.2f}%/yr</div><div class="l">Biomass trend, 2000–25</div>
+      <div class="s">A slight downward drift ({TOTAL_PCT:+.1f}% over the full period)</div></div>
     <div class="card"><div class="n">~{NET/1e3:.0f}k</div><div class="l">possible credits / yr</div>
-      <div class="s">From the step-by-step calculation further down</div></div>
+      <div class="s">VM0048 AD×EF (interim): GFW clearing × CTrees carbon</div></div>
     <div class="card"><div class="n">{usd(NET*4)}–{usd(NET*20)}</div><div class="l">illustrative revenue / yr</div>
       <div class="s">If those credits sold at $4–$20 each</div></div>
   </div>
+</section>
+
+<section>
+  <h2>Where the carbon sits <span class="em">— by customary sector</span></h2>
+  <p>The reserve is shared among ten customary sectors (<i>groupements</i>). Splitting the same
+  CTrees data by sector shows where the standing carbon — and the loss — actually concentrates.</p>
+  <figure>
+    <img src="{SECTORS}" alt="Biomass density and carbon stock by sector">
+    <figcaption>Left: mean 2025 biomass density per sector. Right: above-ground stock (Mt CO₂e) and
+    2000→2025 change. Two sectors — Wamuzimu and Itombwe — hold most of the reserve's carbon.</figcaption>
+  </figure>
+  <table>
+    <tr><th>Sector</th><th>Area (ha)</th><th>Mean Mg/ha</th><th>Stock (Mt CO₂e)</th><th>Change 2000→25</th></tr>
+    {sector_rows}
+  </table>
+  <div class="callout"><b>Reading it:</b> <b>Wamuzimu</b> and <b>Itombwe</b> together hold roughly
+  three-quarters of the reserve's above-ground carbon. The steepest proportional losses sit in the
+  smaller, more accessible edge sectors — useful for targeting patrols and livelihood programs.</div>
 </section>
 
 <section>
@@ -228,31 +291,60 @@ HTML = f"""<!doctype html>
   noticeably different pictures.</p>
   <table>
     <tr><th>What I looked at</th><th>Chloris (~4.6 km)</th><th>CTrees (~100 m)</th></tr>
-    <tr><td>Resolution over the reserve</td><td class="old">~30 pixels</td><td class="new">~1.2 million pixels</td></tr>
-    <tr><td>Typical biomass density</td><td class="old">~214 Mg/ha</td><td class="new">~111 Mg/ha</td></tr>
-    <tr><td>Implied carbon stock</td><td class="old">~450 M tonnes CO₂e</td><td class="new">~210 M tonnes CO₂e</td></tr>
-    <tr><td>Trend, 2003–2025</td><td class="old">roughly flat</td><td class="new">a slight decline</td></tr>
+    <tr><td>Resolution over the reserve</td><td class="old">~270 pixels</td><td class="new">~590,000 pixels</td></tr>
+    <tr><td>Mean biomass density</td><td class="old">~214 Mg/ha</td><td class="new">~{DENS_2025:.0f} Mg/ha</td></tr>
+    <tr><td>Implied carbon stock</td><td class="old">~220 M tonnes CO₂e</td><td class="new">~{STOCK_CO2E/1e6:.0f} M tonnes CO₂e</td></tr>
+    <tr><td>Trend, 2000–2025</td><td class="old">roughly flat</td><td class="new">a slight decline</td></tr>
   </table>
   <div class="callout"><b>Why they differ so much.</b> It's mostly resolution. Coarse pixels average
   small clearings and degraded edges together with healthy forest into one number; fine pixels keep
-  them separate, so CTrees reads lower. Worth settling on which dataset fits Itombwe best.</div>
+  them separate, so CTrees reads lower. Worth settling on which dataset fits Itombwe best.
+  <br><span style="font-size:13px;color:var(--muted)">(CTrees numbers are now clipped to the exact
+  reserve polygon; the Chloris figures are scaled from the earlier read and worth re-clipping too.)</span></div>
 </section>
 
 <section>
   <h2>Biomass over time</h2>
   <div class="two">
     <div>
-      <p class="lead">Across 2000–2025 the average biomass drifts gently downward — roughly
-      <b>0.1% a year</b>.</p>
+      <p class="lead">Across 2000–2025 the reserve's carbon stock drifts gently downward — about
+      <b>{TOTAL_PCT:+.1f}% over the period</b> ({ANN_PCT:+.2f}% a year).</p>
       <p>Small but steady, and in the direction you'd expect if slow logging and charcoal/fuelwood
       pressure are nibbling at the forest. The coarser dataset showed this same forest as basically
       flat.</p>
     </div>
     <figure>
-      <img src="{TREND}" alt="Average biomass over time">
-      <figcaption>Average biomass density over the area, 2003–2025 (CTrees).</figcaption>
+      <img src="{TREND}" alt="Reserve carbon stock and mean density over time">
+      <figcaption>Above-ground carbon stock (Mt CO₂e) and mean density over the reserve, 2000–2025 (CTrees).</figcaption>
     </figure>
   </div>
+</section>
+
+<section>
+  <h2>Deforestation — the activity data <span class="em">— GFW / Hansen vs CTrees</span></h2>
+  <p>Carbon credits aren't paid on biomass density — they're paid on <b>forest actually cleared</b>.
+  For that we pulled the <b>Hansen Global Forest Change</b> tree-cover-loss layer (the UMD/Landsat
+  ~30 m product that Global Forest Watch redistributes — "GFW loss" <i>is</i> Hansen) and clipped it
+  to the reserve.</p>
+  <figure>
+    <img src="{GFW}" alt="Hansen/GFW forest loss vs CTrees biomass over Itombwe">
+    <figcaption>Left: where the forest was cleared, 2001–2024 (red). Right: forest cleared per year
+    (bars) against CTrees mean biomass density (line). The clearing rate has roughly tripled; the net
+    biomass line barely moves.</figcaption>
+  </figure>
+  <div class="cards" style="grid-template-columns:repeat(3,1fr)">
+    <div class="card"><div class="n">{TOTAL_LOSS:,.0f} ha</div><div class="l">Cleared 2001–2024</div>
+      <div class="s">{LOSS_PCT:.1f}% of the reserve's 2000 forest</div></div>
+    <div class="card"><div class="n">~{AD_HA_YR:,.0f} ha/yr</div><div class="l">Recent rate (2015–24)</div>
+      <div class="s">Up from ~500 ha/yr in the 2000s — accelerating</div></div>
+    <div class="card"><div class="n">~{DENS_LOSS:.0f} Mg/ha</div><div class="l">Biomass at cleared sites</div>
+      <div class="s">Roughly half the reserve mean — clearing hits the accessible edges</div></div>
+  </div>
+  <div class="callout"><b>Why GFW and CTrees seem to disagree.</b> They measure different things and
+  both are right. GFW counts <i>gross</i> canopy removal at 30 m; CTrees tracks <i>net</i> biomass at
+  100 m, where regrowth and the coarser pixels offset much of the loss. So CTrees reads a gentle −1.4%
+  while GFW shows 4.4% of the forest cleared and accelerating. For crediting, the <b>cleared area
+  (GFW)</b> is the activity data Verra wants; CTrees supplies the carbon-per-hectare.</div>
 </section>
 
 <section>
@@ -260,55 +352,62 @@ HTML = f"""<!doctype html>
   <p>Turning "tonnes of wood" into "tonnes of CO₂" is just a couple of standard conversions (the
   same factors the IPCC publishes), so it's reproducible from the same data:</p>
   <div class="flow">
-    <div class="step">Biomass<b>~122 Mt</b>of wood</div>
+    <div class="step">Biomass<b>~{STOCK_BIOMASS/1e6:.0f} Mt</b>of wood</div>
     <div class="arr">→</div>
-    <div class="step">about half is carbon<b>~57 Mt</b>of carbon</div>
+    <div class="step">about half is carbon<b>~{CARBON_T/1e6:.0f} Mt</b>of carbon</div>
     <div class="arr">→</div>
-    <div class="step">as CO₂<b>~210 Mt</b>CO₂e</div>
+    <div class="step">as CO₂<b>~{STOCK_CO2E/1e6:.0f} Mt</b>CO₂e</div>
     <div class="arr">→</div>
-    <div class="step">+ roots<b>~261 Mt</b>CO₂e total</div>
+    <div class="step">+ roots<b>~{STOCK_AGBG/1e6:.0f} Mt</b>CO₂e total</div>
   </div>
 </section>
 
 <section>
-  <h2>What it might be worth — and how that works</h2>
+  <h2>What it might be worth <span class="em">— Verra VM0048 / VMD0055</span></h2>
   <div class="explain">
-    <h3>How can a forest that's slowly losing biomass still earn money?</h3>
+    <h3>How a project earns credits — and the formula Verra actually uses</h3>
     <ol>
-      <li>The forest is cleared and degraded a little more every year — for farmland, timber,
-      charcoal and fuelwood — releasing the carbon in those trees as CO₂. The credit isn't about
-      reviving a tree that's already cut; it's about preventing <i>next year's</i> clearing that
-      hasn't happened yet.</li>
-      <li>A protection effort lowers that rate of loss — concretely: <b>rangers and patrols</b> that
-      deter illegal logging, <b>improved cookstoves</b> and <b>alternative livelihoods</b> so
-      communities need less fuelwood and new farmland, and <b>satellite alerts</b> that catch
-      encroachment early. Each tonne of CO₂ that stays in the trees instead of being emitted earns
-      <b>one carbon credit</b>.</li>
-      <li>Companies buy those credits — at some price per tonne — to offset their own emissions.</li>
-      <li>That money pays for the protection, which is what slows the loss in the first place.</li>
+      <li>The forest is being <b>cleared</b> every year — for farmland, charcoal and fuelwood —
+      releasing the carbon in those trees. A protection effort (<b>rangers and patrols</b>,
+      <b>improved cookstoves</b> and <b>livelihoods</b>, <b>satellite alerts</b>) lowers that rate.
+      Each tonne of CO₂ kept in the trees earns <b>one carbon credit</b>; buyers purchase them to
+      offset emissions, and that money funds the protection.</li>
+      <li>Verra's REDD methodology — <b>VM0048</b> with its unplanned-deforestation module
+      <b>VMD0055</b> — does <i>not</i> credit an average biomass-decline rate. It uses
+      <b>Activity&nbsp;Data × Emission&nbsp;Factor</b>: the <i>area of forest cleared per year</i> ×
+      the <i>carbon released per hectare</i>. That's the calculation below — built from the GFW
+      clearing rate (AD) and the CTrees biomass at each cleared site <i>in the year before it was
+      cleared</i> (EF), summed per annual cohort.</li>
     </ol>
-    
   </div>
-  <p style="margin-top:18px">Running the numbers lands around <b>~{NET:,.0f} credits a year</b>. Here's
-  the full chain — it starts from the CO₂ already shown above and applies one factor at a time:</p>
-  <table style="max-width:720px">
+  <div class="callout" style="border-left-color:var(--amber);background:#fbf4e4">
+    <b>Interim estimate.</b> A fully compliant VM0048 baseline reads its deforestation rate from a
+    Verra <b>jurisdictional risk map</b> — which is <b>not yet published for South Kivu</b> (only DR
+    Congo's Mai Ndombe region is near completion). So we use our own GFW-measured clearing rate as a
+    stand-in, and the effectiveness / leakage / uncertainty / buffer factors are illustrative
+    placeholders a registry-approved method would set.</div>
+  <p style="margin-top:18px">On this basis the estimate lands around <b>~{NET:,.0f} credits a year</b>.
+  The chain is the VM0048 formula, one factor at a time:</p>
+  <table style="max-width:760px">
     <tr><th>Step</th><th>What it does</th><th>Running total</th></tr>
-    <tr><td>CO₂ held</td><td>standing above-ground stock (from the conversion above)</td>
-      <td>{STOCK_CO2E:,.0f} t CO₂e</td></tr>
-    <tr><td>× 0.1% / yr</td><td>the decline we actually measured = baseline loss</td>
-      <td>{GROSS:,.0f} t/yr at risk</td></tr>
-    <tr><td>× 75%</td><td>share of that loss the project prevents</td>
-      <td>{GROSS*PREVENTED:,.0f} t/yr</td></tr>
-    <tr><td>× 80%</td><td>after −20% leakage (emissions displaced elsewhere)</td>
-      <td>{GROSS*PREVENTED*(1-LEAKAGE):,.0f} t/yr</td></tr>
-    <tr><td>× 85%</td><td>after −15% buffer pool (held back for permanence)</td>
+    <tr><td>Activity data (AD)</td><td>forest cleared per year (GFW/Hansen, 2015–24 mean)</td>
+      <td>{AD_HA_YR:,.0f} ha/yr</td></tr>
+    <tr><td>× EF = {EF:,.0f} tCO₂e/ha</td><td>carbon per ha at the cleared sites, pre-clearing (CTrees {DENS_LOSS:.0f} Mg/ha + roots)</td>
+      <td>{BASE_EM:,.0f} tCO₂e/yr baseline</td></tr>
+    <tr><td>× {EFFECT:.0%} effectiveness</td><td>share of that clearing the project actually averts</td>
+      <td>{BASE_EM*EFFECT:,.0f} t/yr</td></tr>
+    <tr><td>× (1−{LEAKAGE:.0%}) leakage</td><td>emissions displaced elsewhere</td>
+      <td>{BASE_EM*EFFECT*(1-LEAKAGE):,.0f} t/yr</td></tr>
+    <tr><td>× (1−{UNCERT:.0%}) uncertainty</td><td>VMD0055 deduction (shrinks with field plots)</td>
+      <td>{BASE_EM*EFFECT*(1-LEAKAGE)*(1-UNCERT):,.0f} t/yr</td></tr>
+    <tr><td>× (1−{BUFFER:.0%}) buffer</td><td>non-permanence buffer withheld by the registry</td>
       <td class="new">≈ {NET:,.0f} credits/yr</td></tr>
   </table>
-  <div class="assume"><b>In one line:</b> {STOCK_CO2E:,.0f} × 0.1% × 0.75 × 0.80 × 0.85 ≈
-  {NET:,.0f} credits/yr. The <b>0.1%/yr</b> baseline is the decline measured in the CTrees series
-  above — not an inflated counterfactual; the 75% / −20% / −15% factors are placeholders a
-  registry-approved method would set. Carbon prices below ($4–$20/tonne) span the voluntary market
-  range.</div>
+  <div class="assume"><b>In one line:</b> {AD_HA_YR:,.0f} ha/yr × {EF:,.0f} tCO₂e/ha ×
+  {EFFECT:.0%} × {1-LEAKAGE:.0%} × {1-UNCERT:.0%} × {1-BUFFER:.0%} ≈ {NET:,.0f} credits/yr. The
+  baseline ({BASE_EM:,.0f} tCO₂e/yr) is real — GFW clearing × CTrees carbon. Note the carbon at
+  cleared sites (~{DENS_LOSS:.0f} Mg/ha) is about half the reserve mean: clearing eats the accessible
+  edges first. Carbon prices below ($4–$20/tonne) span the voluntary market range.</div>
   <div class="two" style="margin-top:6px">
     <table>
       <tr><th>Carbon price</th><th>Revenue / yr</th><th>Over 10 yrs</th></tr>

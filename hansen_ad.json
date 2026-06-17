@@ -1,0 +1,108 @@
+{
+  "source": "Hansen GFC-2024-v1.12 (UMD/GLAD, Landsat ~30 m; = GFW tree-cover loss)",
+  "tile": "00N_020E",
+  "forest_threshold_pct": 30,
+  "reserve_area_ha": 577126.8918040671,
+  "forest2000_area_ha": 566994.3512027045,
+  "annual": [
+    {
+      "year": 2001,
+      "deforested_ha": 656.9491102593878
+    },
+    {
+      "year": 2002,
+      "deforested_ha": 675.1725485566596
+    },
+    {
+      "year": 2003,
+      "deforested_ha": 387.7490228428663
+    },
+    {
+      "year": 2004,
+      "deforested_ha": 634.883912024734
+    },
+    {
+      "year": 2005,
+      "deforested_ha": 610.4151972256084
+    },
+    {
+      "year": 2006,
+      "deforested_ha": 222.29486928715528
+    },
+    {
+      "year": 2007,
+      "deforested_ha": 790.3938366014999
+    },
+    {
+      "year": 2008,
+      "deforested_ha": 598.7462805428629
+    },
+    {
+      "year": 2009,
+      "deforested_ha": 542.9343934642093
+    },
+    {
+      "year": 2010,
+      "deforested_ha": 624.3582297291678
+    },
+    {
+      "year": 2011,
+      "deforested_ha": 324.9591565477239
+    },
+    {
+      "year": 2012,
+      "deforested_ha": 328.7020554591111
+    },
+    {
+      "year": 2013,
+      "deforested_ha": 1056.4289469511182
+    },
+    {
+      "year": 2014,
+      "deforested_ha": 1484.4201439486915
+    },
+    {
+      "year": 2015,
+      "deforested_ha": 1648.3283414129478
+    },
+    {
+      "year": 2016,
+      "deforested_ha": 1751.88495931225
+    },
+    {
+      "year": 2017,
+      "deforested_ha": 1236.6953514508168
+    },
+    {
+      "year": 2018,
+      "deforested_ha": 2067.594231722059
+    },
+    {
+      "year": 2019,
+      "deforested_ha": 1668.8841887422432
+    },
+    {
+      "year": 2020,
+      "deforested_ha": 2083.888439547505
+    },
+    {
+      "year": 2021,
+      "deforested_ha": 1771.528442836553
+    },
+    {
+      "year": 2022,
+      "deforested_ha": 915.040512919322
+    },
+    {
+      "year": 2023,
+      "deforested_ha": 1536.4272459777271
+    },
+    {
+      "year": 2024,
+      "deforested_ha": 1478.7583791539914
+    }
+  ],
+  "total_loss_2001_2024_ha": 25097.437796516213,
+  "mean_ad_2001_2024_ha_yr": 1045.7265748548423,
+  "mean_ad_2015_2024_ha_yr": 1615.9030093075414
+}

@@ -1,0 +1,152 @@
+{
+  "method": "VM0048 + VMD0055 (AD \u00d7 EF), per-cohort pre-clearing EF \u2014 interim project-level proxy",
+  "ef_method": "biomass sampled the year before each pixel's clearing (CTrees), per loss cohort",
+  "ad": {
+    "recent10_ha_yr": 1615.9030093075414,
+    "all_ha_yr": 1045.7265748548423,
+    "ref_period_recent": "2015-2024",
+    "source": "Hansen GFC-2024-v1.12 (UMD/GLAD, Landsat ~30 m; = GFW tree-cover loss)"
+  },
+  "ef": {
+    "dens_loss_weighted_Mg_ha": 67.81379300263295,
+    "dens_reserve_mean_Mg_ha": 147.83604431152344,
+    "EF_AGB_tCO2e_ha": 116.8657699412041,
+    "EF_AGB_BGB_tCO2e_ha": 144.9135547270931,
+    "C_FRACTION": 0.47,
+    "ROOT_SHOOT": 0.24
+  },
+  "annual_emissions_tCO2e": [
+    {
+      "year": 2001,
+      "area_ha": 656.9491102593878,
+      "co2e": 107387.16045503547
+    },
+    {
+      "year": 2002,
+      "area_ha": 675.1725485566596,
+      "co2e": 110881.74240905787
+    },
+    {
+      "year": 2003,
+      "area_ha": 387.7490228428663,
+      "co2e": 56768.63295788382
+    },
+    {
+      "year": 2004,
+      "area_ha": 634.883912024734,
+      "co2e": 111299.04771191059
+    },
+    {
+      "year": 2005,
+      "area_ha": 610.4151972256084,
+      "co2e": 81925.8720775143
+    },
+    {
+      "year": 2006,
+      "area_ha": 222.29486928715528,
+      "co2e": 25505.706472584556
+    },
+    {
+      "year": 2007,
+      "area_ha": 790.3938366014999,
+      "co2e": 118444.16662423153
+    },
+    {
+      "year": 2008,
+      "area_ha": 598.7462805428629,
+      "co2e": 84387.94011147368
+    },
+    {
+      "year": 2009,
+      "area_ha": 542.9343934642093,
+      "co2e": 72920.92660502452
+    },
+    {
+      "year": 2010,
+      "area_ha": 624.3582297291678,
+      "co2e": 74118.51112683286
+    },
+    {
+      "year": 2011,
+      "area_ha": 324.9591565477239,
+      "co2e": 43261.42017883678
+    },
+    {
+      "year": 2012,
+      "area_ha": 328.7020554591111,
+      "co2e": 37831.8596222052
+    },
+    {
+      "year": 2013,
+      "area_ha": 1056.4289469511182,
+      "co2e": 130797.79321615623
+    },
+    {
+      "year": 2014,
+      "area_ha": 1484.4201439486915,
+      "co2e": 178798.73309567518
+    },
+    {
+      "year": 2015,
+      "area_ha": 1648.3283414129478,
+      "co2e": 206857.40492076767
+    },
+    {
+      "year": 2016,
+      "area_ha": 1751.88495931225,
+      "co2e": 251733.98968669615
+    },
+    {
+      "year": 2017,
+      "area_ha": 1236.6953514508168,
+      "co2e": 158937.44384219017
+    },
+    {
+      "year": 2018,
+      "area_ha": 2067.594231722059,
+      "co2e": 261417.84905479336
+    },
+    {
+      "year": 2019,
+      "area_ha": 1668.8841887422432,
+      "co2e": 232197.42265411123
+    },
+    {
+      "year": 2020,
+      "area_ha": 2083.888439547505,
+      "co2e": 293813.1779785209
+    },
+    {
+      "year": 2021,
+      "area_ha": 1771.528442836553,
+      "co2e": 280064.1191185068
+    },
+    {
+      "year": 2022,
+      "area_ha": 915.040512919322,
+      "co2e": 157672.2795609655
+    },
+    {
+      "year": 2023,
+      "area_ha": 1536.4272459777271,
+      "co2e": 262432.7665904122
+    },
+    {
+      "year": 2024,
+      "area_ha": 1478.7583791539914,
+      "co2e": 297502.95956388034
+    }
+  ],
+  "baseline_tCO2e_yr": {
+    "recent10": 240262.9412970844,
+    "all": 151539.9552348028
+  },
+  "credit_stack": {
+    "effectiveness": 0.5,
+    "leakage": 0.2,
+    "uncertainty": 0.15,
+    "buffer": 0.15,
+    "net_credits_yr": 69435.9900348574
+  },
+  "caveat": "Interim proxy: AD is our own Hansen-measured rate, NOT the Verra jurisdictional allocation (no South Kivu risk map published yet). Credit-stack deductions are illustrative placeholders."
+}

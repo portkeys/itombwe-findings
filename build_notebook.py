@@ -56,16 +56,15 @@ print("Core libs loaded.")""")
 
 md(r"""## 1 · Define the Itombwe area of interest
 
-Itombwe straddles roughly **2°51′–4°00′ S** and **28°09′–28°58′ E** in South Kivu, DRC. The
-massif was *originally delineated* at ~1.5 million ha; the legally gazetted reserve today is
-~573,000–760,000 ha after community boundary negotiations.
+Itombwe straddles roughly **2°56′–3°52′ S** and **27°57′–29°00′ E** in South Kivu, DRC. We now use
+the **official gazetted reserve polygon** (`boundary_file/RN_Itombwe.shp`, ~573,000 ha) rather than a
+bounding box. The `itombwe_aoi` helper reprojects the shapefile to EPSG:4326, picks the CTrees read
+window from its bbox, and rasterizes the polygon onto the ~100 m grid so every statistic below is
+clipped to the reserve's true shape — not a rectangle that overstated area ~2×.""")
+code(r"""import itombwe_aoi as aoi      # official reserve polygon + masking helpers
 
-> **Production note:** use the official reserve polygon (ICCN gazette / WDPA / WWF–WCS boundary
-> shapefile), not a bounding box. A rectangle over the massif overstates area somewhat, so the
-> stock and revenue numbers below are scaled to the *bounding box*, not the gazetted reserve.
-> Swapping in the real polygon is a one-line change in the windowing step.""")
-code(r"""# Bounding box [west, south, east, north] in EPSG:4326 (lon/lat)
-ITOMBWE_BBOX = [28.16, -4.01, 28.98, -2.85]
+RESERVE_GEOM = aoi.reserve_geom()           # whole reserve, EPSG:4326
+ITOMBWE_BBOX = aoi.bbox()                    # [w,s,e,n] read window (from the polygon)
 
 # Carbon accounting constants (IPCC 2006 GL / 2019 refinement defaults)
 CARBON_FRACTION   = 0.47      # tC per t dry AGB (IPCC default for tropical forest)
@@ -73,7 +72,7 @@ CO2_PER_C         = 44/12     # 3.667 tCO2 per tC
 ROOT_SHOOT_RATIO  = 0.24      # belowground:aboveground for tropical moist forest (optional add-on)
 
 HEADLINE_YEAR     = 2025      # latest CTrees year, used for the headline stock
-print("AOI:", ITOMBWE_BBOX, "| headline year:", HEADLINE_YEAR)""")
+print("AOI: reserve polygon", [round(v,3) for v in ITOMBWE_BBOX], "| headline year:", HEADLINE_YEAR)""")
 
 md(r"""## 2 · Connect to the biomass data source and define the reader
 
@@ -104,13 +103,12 @@ def _ctrees_connect():
     _ct["x"]     = root["x"][:]                                  # lon, ascending
     _ct["y"]     = root["y"][:]                                  # lat, descending
     _ct["years"] = [int(str(t)[:4]) for t in root["time"][:]]    # 2000..2025
-    # precompute the Itombwe index window + latitude-corrected pixel area (ha)
-    w, s, e, n = ITOMBWE_BBOX
-    ix = np.where((_ct["x"] >= w) & (_ct["x"] <= e))[0]
-    iy = np.where((_ct["y"] >= s) & (_ct["y"] <= n))[0]
-    _ct["win"] = (int(iy.min()), int(iy.max()) + 1, int(ix.min()), int(ix.max()) + 1)
+    # index window from the reserve polygon bbox + a boolean mask of the polygon itself
+    _ct["win"]  = aoi.window(_ct["x"], _ct["y"])
+    _ct["mask"] = aoi.rasterize(RESERVE_GEOM, _ct["x"], _ct["y"], _ct["win"])  # True inside reserve
+    y0, y1, _, _ = _ct["win"]
+    latc = math.radians((_ct["y"][y0] + _ct["y"][y1 - 1]) / 2)
     m_per_deg = 111_320.0
-    latc = math.radians((s + n) / 2)
     _ct["px_ha"] = (CTREES_PIX_DEG * m_per_deg) * (CTREES_PIX_DEG * m_per_deg * math.cos(latc)) / 10_000.0
     return True
 
@@ -123,6 +121,7 @@ def load_agb_ctrees(year):
     y0, y1, x0, x1 = _ct["win"]
     raw  = _ct["agb"][ti, y0:y1, x0:x1].astype("float64")       # reads only the AOI window
     dens = np.where(raw == CTREES_FILL, np.nan, raw / CTREES_SCALE)   # Mg/ha
+    dens = np.where(_ct["mask"], dens, np.nan)                  # clip to the reserve polygon
     px_ha = _ct["px_ha"]
     return dens * px_ha, px_ha, dens                            # (tonnes/pixel, px_ha, density)
 
