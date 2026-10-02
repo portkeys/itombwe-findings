@@ -6,6 +6,10 @@ to a carbon stock, and illustrating a REDD+ credit/revenue estimate.
 
 **Live page:** https://portkeys.github.io/itombwe-findings/
 
+**Tree-planting carbon calculator:** https://portkeys.github.io/itombwe-findings/calculator.html —
+adjust survival, species mix and tree size to estimate CO₂ and credits from the One Million Trees planting
+(single self-contained file, `calculator.html`).
+
 The report is a single self-contained file (`index.html`) with all figures
 embedded — no external assets. It is generated from `build_report.py` in this
 repo; edit the source and regenerate rather than editing `index.html` directly.
