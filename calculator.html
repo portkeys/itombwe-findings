@@ -177,11 +177,11 @@ const SPECIES = {
   typical:   { name: "Typical tree (Note B)", rho: 0.55, d5: 6, h5: 6,   d10: 12, h10: 10,  note: "Single average tree used in Note B" },
 };
 const PRESETS = {
-  base: { label: "Our estimate (nursery mix)", note: "Burhinyi nursery species with our assumed shares and 55% survival.",
-    survival: 55, growth: 1.0,
+  base: { label: "Our estimate (nursery mix)", note: "Burhinyi nursery species with our assumed shares and 65% survival.",
+    survival: 65, growth: 1.0,
     shares: { avocado: 25, eucalyptus: 20, grevillea: 20, prunus: 15, maesopsis: 12, calliandra: 8, albizia: 0, typical: 0 } },
-  albizia: { label: "With Albizia", note: "Albizia gummifera replaces Maesopsis and Calliandra (Dr Goodall's suggestion).",
-    survival: 55, growth: 1.0,
+  albizia: { label: "With Albizia", note: "Albizia gummifera replaces Maesopsis and Calliandra (Dr Goodall's suggestion), 65% survival.",
+    survival: 65, growth: 1.0,
     shares: { avocado: 25, eucalyptus: 20, grevillea: 20, prunus: 15, maesopsis: 0, calliandra: 0, albizia: 20, typical: 0 } },
   noteb: { label: "Dr Goodall Note B", note: "One typical tree (6 cm, 6 m at yr 5; 12 cm, 10 m at yr 10), wood density 0.55, 50% survival.",
     survival: 50, growth: 1.0,
@@ -297,16 +297,16 @@ function calc() {
 2. Add roots:        ${fmt(avg, 1)} × ${fmt(1 + roots / 100, 2)}               = ${fmt(withRoots, 1)} kg
 3. Carbon:           ${fmt(withRoots, 1)} × ${fmt(cfrac / 100, 2)}               = ${fmt(c, 1)} kg C
 4. CO₂:              ${fmt(c, 1)} × 3.67                = ${fmt(perTree, 1)} kg CO₂ per tree
-5. Surviving trees:  ${fmt(trees)} × ${surv}%        = ${fmt(survivors)}
+5. Surviving trees:  ${fmt(trees)} × ${surv}% survival        = ${fmt(survivors)}
 6. Total:            ${fmt(perTree, 1)} kg × ${fmt(survivors)} ÷ 1,000 = ${fmt(round(total))} t CO₂
-7. Credits:          ${fmt(round(total))} × ${cs}%              ≈ ${fmt(round(total * cs / 100))} credits
+7. Credits:          ${fmt(round(total))} × ${cs}% credit share            ≈ ${fmt(round(total * cs / 100))} credits
 8. Value:            ${fmt(round(total * cs / 100))} × $${price}             ≈ $${fmt(round(total * cs / 100 * price))}`;
 
   // comparison rows: current inputs vs fixed published figures
   const rows = [
     ["Your current inputs", fmt(survivors), fmt(s.w10, 1) + " kg", fmt(round(co2(s.w5, trees, surv, roots, cfrac))), fmt(round(co2(s.w10, trees, surv, roots, cfrac)))],
     ["Dr Goodall, Note B", "500,000", "~45 kg", "~7,500", "~48,000"],
-    ["Our base estimate", "550,000", "~55 kg", "~12,500", "~65,000"],
+    ["Our base estimate (65% survival)", "650,000", "~55 kg", "~14,900", "~77,300"],
   ];
   $("compare").innerHTML = rows.map(r => `<tr><td style="text-align:left">${r[0]}</td>${r.slice(1).map(v => `<td>${v}</td>`).join("")}</tr>`).join("");
 }
